@@ -140,15 +140,18 @@ Contains
     ! REMEMBER DO DIAG TERMS ONCE!! - or do we need to as only writing ... need to think
     ! ALSO NEED ARGUMENT FOR COMPLEX CONJUGATION FOR ONE TRAINGLE COMPARED TO OTHER
     ! Now can fourier transfrom and produce one triangle of the K space matrices
+
+    ! For moment do all in one routine - thinks about splitting into upper and lower traingles later
     Call do_lattice_FT( n_ao, n_shells, size_shells, operator_G_space, &
          i_own_row, shell_start_row, shell_finish_row, &
          i_own_col, shell_start_col, shell_finish_col, &
          operator_K_space )
-    ! And by transposing the ownership arrays we can do the other
-    Call do_lattice_FT( n_ao, n_shells, size_shells, operator_G_space, &
-         i_own_col, shell_start_col, shell_finish_col, &
-         i_own_row, shell_start_row, shell_finish_row, &
-         operator_K_space )
+    ! Forget this idea for the moment and do it simply
+!!$    ! And by transposing the ownership arrays we can do the other
+!!$    Call do_lattice_FT( n_ao, n_shells, size_shells, operator_G_space, &
+!!$         i_own_col, shell_start_col, shell_finish_col, &
+!!$         i_own_row, shell_start_row, shell_finish_row, &
+!!$         operator_K_space )
 
   End Subroutine MPP_Lattice_FT
 
@@ -176,5 +179,66 @@ Contains
     my_shell_finish = last_index
        
   End Subroutine find_shell_start_and_finish
-  
+
+  Subroutine do_lattice_FT( n_ao, n_shells, size_shells, operator_G_space, &
+       i_own_row, shell_start_row, shell_finish_row, &
+       i_own_col, shell_start_col, shell_finish_col, &
+       operator_K_space )
+
+    Use numbers        , Only : wp => float
+    Use ks_array_module, Only : ks_array, ks_point_info, K_POINT_NOT_EXIST
+
+    Integer                      , Intent( In    ) :: n_ao
+    Integer                      , Intent( In    ) :: n_shells
+    Integer   , Dimension( :    ), Intent( In    ) :: size_shells
+    Real( wp ), Dimension( :    ), Intent( In    ) :: operator_G_space
+    Logical   , Dimension( :, : ), Intent( In    ) :: i_own_row
+    Integer   , Dimension( :, : ), Intent( In    ) :: shell_start_row
+    Integer   , Dimension( :, : ), Intent( In    ) :: shell_finish_row
+    Logical   , Dimension( :, : ), Intent( In    ) :: i_own_col
+    Integer   , Dimension( :, : ), Intent( In    ) :: shell_start_col
+    Integer   , Dimension( :, : ), Intent( In    ) :: shell_finish_col
+    Type( ks_array )             , Intent( InOut ) :: operator_K_space
+
+    Integer :: n_G_vectors, start_G_vectors
+    Integer :: la1, ll2, la2
+
+    ! Loop over all the shells
+    Outer_shell_loop: Do la1 = 1, n_shells
+
+       ! Work out if this process store any contribution to this shell
+       Hold_outer_shell: If( Any( i_own_row( la1, : ) ) .Or. Any( i_own_col( la1, : ) ) ) Then
+
+          ! Loop over all shells that couple with the outer shell
+          Coupled_shells_loop: Do ll2 = icct( la1 ) + icc( la1 ), icct( la1 + 1 )
+
+             ! Work out which inner shell this is
+             la2 = ila12t( ll2 )
+
+             ! Only need to do something if this process holds some data for this shell couple
+             Hold_inner_shell: If( Any( i_own_row( la2, : ) ) .Or. Any( i_own_col( la2, : ) ) ) Then
+
+                ! Only need to do something if there actually any any non-zero elements
+                ! for this couple
+                n_G_vectors = idimfc( jpoint( ll2 ) )
+                Coupling_vectors_exist: If( n_G_vectors  /= 0 ) Then
+
+                   ! Getting here means that there is data to FT held on this process
+
+                   ! Find the list of G vectors relevant to this couple
+                   start_G_vectors = iccs3( ll2 )
+                   
+                End If Coupling_vectors_exist
+                
+             End If Hold_inner_shell
+             
+          End Do Coupled_shells_loop
+          
+       End If Hold_outer_shell
+       
+    End Do
+
+  End Subroutine do_lattice_FT
+    
+    
 End Module MPP_Fourier_transform
