@@ -200,8 +200,23 @@ Contains
     Integer   , Dimension( :, : ), Intent( In    ) :: shell_finish_col
     Type( ks_array )             , Intent( InOut ) :: operator_K_space
 
+    Type( ks_point_info ) :: this_ks
+
+    Type FT_coeffs_container !!!!FINISH FROM HERE !!!!!!
+
+    Integer :: ks, n_ks
     Integer :: n_G_vectors, start_G_vectors
     Integer :: la1, ll2, la2
+
+    ! Calculate the FT coefficients at all K relevant to me
+    n_ks = Size( i_own_row, Dim = 2 )
+    Call operator_K_space%iterator_init()
+    ks = 0
+    this_ks = operator_K_space%iterator_next()
+    Calc_FT_Coeffs_loop: Do While( this_ks%k_type /= K_POINT_NOT_EXIST )
+       ks = ks + 1
+       Call expu( this_ks%k_indices( 1 ), this_ks%k_indices( 2 ), this_ks%k_indices( 3 ) )
+    End Do Calc_FT_Coeffs_loop
 
     ! Loop over all the shells
     Outer_shell_loop: Do la1 = 1, n_shells
