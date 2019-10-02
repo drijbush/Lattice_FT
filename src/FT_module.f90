@@ -83,6 +83,7 @@ Contains
        ks = ks + 1
        global_to_local_row( :, ks ) = operator_K_space%global_to_local( this_ks%k_indices, this_ks%spin, 'R' )
        global_to_local_row( :, ks ) = operator_K_space%global_to_local( this_ks%k_indices, this_ks%spin, 'C' )
+       this_ks = operator_K_space%iterator_next()
     End Do
     Call operator_K_space%iterator_reset()
 
@@ -102,6 +103,7 @@ Contains
           i_own_col( i_shell, ks ) = Any( global_to_local_col( shell_start:shell_finish, ks ) > 0 )
           shell_start = shell_finish + 1
        End Do
+       this_ks = operator_K_space%iterator_next()
     End Do
     Call operator_K_space%iterator_reset()
 
@@ -134,6 +136,7 @@ Contains
           End If
           shell_start = shell_finish + 1
        End Do
+       this_ks = operator_K_space%iterator_next()
     End Do
     Call operator_K_space%iterator_reset()
 
@@ -187,6 +190,7 @@ Contains
 
     Use numbers        , Only : wp => float
     Use ks_array_module, Only : ks_array, ks_point_info, K_POINT_NOT_EXIST
+    Use Expo_module    , Only : ex
 
     Integer                      , Intent( In    ) :: n_ao
     Integer                      , Intent( In    ) :: n_shells
@@ -202,7 +206,12 @@ Contains
 
     Type( ks_point_info ) :: this_ks
 
-    Type FT_coeffs_container !!!!FINISH FROM HERE !!!!!!
+    Type FT_coeffs_container
+       Real   ( wp ), Dimension( : ), Allocatable :: real_ft_coeffs
+       Complex( wp ), Dimension( : ), Allocatable :: cmplx_ft_coeffs
+    End type FT_coeffs_container
+
+    Type( FT_coeffs_container ), Dimension( : ), Allocatable :: ft_coeffs
 
     Integer :: ks, n_ks
     Integer :: n_G_vectors, start_G_vectors
@@ -210,12 +219,20 @@ Contains
 
     ! Calculate the FT coefficients at all K relevant to me
     n_ks = Size( i_own_row, Dim = 2 )
+    Allocate( ft_coeffs( 1:n_ks ) )
     Call operator_K_space%iterator_init()
     ks = 0
     this_ks = operator_K_space%iterator_next()
     Calc_FT_Coeffs_loop: Do While( this_ks%k_type /= K_POINT_NOT_EXIST )
        ks = ks + 1
-       Call expu( this_ks%k_indices( 1 ), this_ks%k_indices( 2 ), this_ks%k_indices( 3 ) )
+       Complex_or_real: If( this_ks%k_type == K_POINT_COMPLEX ) Then
+          Call expu( this_ks%k_indices( 1 ), this_ks%k_indices( 2 ), this_ks%k_indices( 3 ) )
+          ft_coeffs( ks )%cmplx_ft_coeffs = Cmplx( ex( 1, : ), ex( 2, : ) )
+       Else
+          Call expt( this_ks%k_indices( 1 ), this_ks%k_indices( 2 ), this_ks%k_indices( 3 ) )
+          ft_coeffs( ks )%real_ft_coeffs = ex( 1, : )
+       End If Complex_or_real
+       this_ks = operator_K_space%iterator_next()
     End Do Calc_FT_Coeffs_loop
 
     ! Loop over all the shells
