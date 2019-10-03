@@ -295,10 +295,11 @@ Contains
 
     ! Bit of memory to store the bit of the reducible G space represantation of the 
     ! matrix that we generate
-    Allocate( fg_red_bit( 1:max_size_shell * max_size_shell ), 1:2 )
+    Allocate( fg_red_bit( 1:max_size_shell * max_size_shell, 1:2 ) )
 
     ! Similarly for the bit of the reciprocal space matrix
-    Allocate( fk_bit( 1:max_size_shell * max_size_shell ) )
+    Allocate( fk_bit_complex( 1:max_size_shell * max_size_shell ) )
+    Allocate( fk_bit_real   ( 1:max_size_shell * max_size_shell ) )
 
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     ! NEED TO ADD ZEROING OPERTAOR_K_SPACE
@@ -356,7 +357,6 @@ Contains
                          Call FT_complex
                       Else
                          Call FT_real
-                      Else
                       End If Real_Or_Complex
                       this_ks = operator_K_space%iterator_next()
                    End Do KS_point_loop
