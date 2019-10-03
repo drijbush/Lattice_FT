@@ -260,61 +260,126 @@ Contains
     Use numbers        , Only : wp => float
     Use ks_array_module, Only : ks_array, ks_point_info, K_POINT_NOT_EXIST
 
-    Integer                      , Intent( In    ) :: n_ao
-    Integer                      , Intent( In    ) :: n_shells
-    Integer   , Dimension( :    ), Intent( In    ) :: size_shells
-    Real( wp ), Dimension( :    ), Intent( In    ) :: operator_G_space
-    Logical   , Dimension( :, : ), Intent( In    ) :: i_own_row
-    Integer   , Dimension( :, : ), Intent( In    ) :: shell_start_row
-    Integer   , Dimension( :, : ), Intent( In    ) :: shell_finish_row
-    Logical   , Dimension( :, : ), Intent( In    ) :: i_own_col
-    Integer   , Dimension( :, : ), Intent( In    ) :: shell_start_col
-    Integer   , Dimension( :, : ), Intent( In    ) :: shell_finish_col
-    Type( ks_array )             , Intent( InOut ) :: operator_K_space
-!!$
-!!$    Type( ks_point_info ) :: this_ks
-!!$
-!!$    Integer :: ks, n_ks
-!!$    Integer :: n_G_vectors, start_G_vectors
-!!$    Integer :: la1, ll2, la2
-!!$
-!!$    n_ks = Size( i_own_row, Dim = 2 )
-!!$
-!!$    ! Loop over all the shells
-!!$    Outer_shell_loop: Do la1 = 1, n_shells
-!!$
-!!$       ! Work out if this process store any contribution to this shell
-!!$       Hold_outer_shell: If( Any( i_own_row( la1, : ) ) .Or. Any( i_own_col( la1, : ) ) ) Then
-!!$
-!!$          ! Loop over all shells that couple with the outer shell
-!!$          Coupled_shells_loop: Do ll2 = icct( la1 ) + icc( la1 ), icct( la1 + 1 )
-!!$
-!!$             ! Work out which inner shell this is
-!!$             la2 = ila12t( ll2 )
-!!$
-!!$             ! Only need to do something if this process holds some data for this shell couple
-!!$             Hold_inner_shell: If( Any( i_own_row( la2, : ) ) .Or. Any( i_own_col( la2, : ) ) ) Then
-!!$
-!!$                ! Only need to do something if there actually any any non-zero elements
-!!$                ! for this couple
-!!$                n_G_vectors = idimfc( jpoint( ll2 ) )
-!!$                Coupling_vectors_exist: If( n_G_vectors  /= 0 ) Then
-!!$
-!!$                   ! Getting here means that there is data to FT held on this process
-!!$
-!!$                   ! Find the list of G vectors relevant to this couple
-!!$                   start_G_vectors = iccs3( ll2 )
-!!$                   
-!!$                End If Coupling_vectors_exist
-!!$                
-!!$             End If Hold_inner_shell
-!!$             
-!!$          End Do Coupled_shells_loop
-!!$          
-!!$       End If Hold_outer_shell
-!!$       
-!!$    End Do
-!!$
+    Integer                                       , Intent( In    ) :: n_ao
+    Integer                                       , Intent( In    ) :: n_shells
+    Integer                    , Dimension( :    ), Intent( In    ) :: size_shells
+    Real( wp )                 , Dimension( :    ), Intent( In    ) :: operator_G_space
+    Logical                    , Dimension( :, : ), Intent( In    ) :: i_own_row
+    Integer                    , Dimension( :, : ), Intent( In    ) :: shell_start_row
+    Integer                    , Dimension( :, : ), Intent( In    ) :: shell_finish_row
+    Logical                    , Dimension( :, : ), Intent( In    ) :: i_own_col
+    Integer                    , Dimension( :, : ), Intent( In    ) :: shell_start_col
+    Integer                    , Dimension( :, : ), Intent( In    ) :: shell_finish_col
+    Type( FT_coeffs_container ), Dimension( :    ), Intent( In    ) :: ft_coeffs
+    Type( ks_array )                              , Intent( InOut ) :: operator_K_space
+
+    Complex( wp ), Dimension( : ), Allocatable :: fk_bit_complex
+
+    Real( wp ), Dimension( :, : ), Allocatable :: fg_red_bit
+    
+    Real( wp ), Dimension( : ), Allocatable :: fk_bit_real
+
+    Type( ks_point_info ) :: this_ks
+
+    Integer :: ks, n_ks
+    Integer :: n_G_vectors, start_G_vectors
+    Integer :: la1, ll2, la2
+    Integer :: spin
+    Integer :: nbf_la1, nbf_la2, nbf12
+    
+    ! Some basic information about the system
+    max_size_shell = Maxval( size_shells( 1:n_shells ) )
+
+    ! NUmber of KS points
+    n_ks = Size( i_own_row, Dim = 2 )
+
+    ! Bit of memory to store the bit of the reducible G space represantation of the 
+    ! matrix that we generate
+    Allocate( fg_red_bit( 1:max_size_shell * max_size_shell ), 1:2 )
+
+    ! Similarly for the bit of the reciprocal space matrix
+    Allocate( fk_bit( 1:max_size_shell * max_size_shell ) )
+
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    ! NEED TO ADD ZEROING OPERTAOR_K_SPACE
+    ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+    ! NEED TO FIND NUMBER OF SPINS
+
+    ! Loop over all the shells
+    Outer_shell_loop: Do la1 = 1, n_shells
+
+       ! Number of basis functions in this shell
+       nbf_la1 = size_shells( la1 )
+
+       ! Work out if this process store any contribution to this shell
+       Hold_outer_shell: If( Any( i_own_row( la1, : ) ) .Or. Any( i_own_col( la1, : ) ) ) Then
+
+          ! Loop over all shells that couple with the outer shell
+          Coupled_shells_loop: Do ll2 = icct( la1 ) + icc( la1 ), icct( la1 + 1 )
+
+             ! Work out which inner shell this is
+             la2 = ila12t( ll2 )
+
+             ! Only need to do something if this process holds some data for this shell couple
+             Hold_inner_shell: If( Any( i_own_row( la2, : ) ) .Or. Any( i_own_col( la2, : ) ) ) Then
+
+                ! Only need to do something if there actually any any non-zero elements
+                ! for this couple
+                n_G_vectors = idimfc( jpoint( ll2 ) )
+                Coupling_vectors_exist: If( n_G_vectors  /= 0 ) Then
+
+                   ! Getting here means that there is data to FT held on this process
+
+                   ! Number of basis functions in this shell
+                   nbf_la1 = size_shells( la1 )
+                   nbf12   = nbf_la1 * nbf_la2
+                   
+                   ! Find the list of G vectors relevant to this couple
+                   start_G_vectors = ngshg( iccs3( ll2 ) + 1 )
+                   n_G_vectors     = ngshg( iccs3( ll2 ) + 1 + n_g_vectors ) - start_G_vectors
+
+                   ! Calculate the bits of the reducible matrix we need
+                   Real_space_spin_loop: Do spin = 1, n_spin
+                      Call get_red_l1_l2( get_xg, spin, l2, l1, fg_red_bit, ierr )
+                   End Do Real_space_spin_loop
+                   
+                   ! Loop over ks points and spins
+                   Call operator_K_space%iterator_init()
+                   ks = 0
+                   this_ks = operator_K_space%iterator_next()
+                   KS_point_loop: Do While( this_ks%k_type /= K_POINT_NOT_EXIST )
+                      ks = ks + 1
+                      spin = this_ks%spin
+                      Real_Or_Complex: If( this_ks%k_type == K_POINT_COMPLEX  ) Then
+                         Call FT_complex
+                      Else
+                         Call FT_real
+                      Else
+                      End If Real_Or_Complex
+                      this_ks = operator_K_space%iterator_next()
+                   End Do KS_point_loop
+                   Call operator_K_space%iterator_reset()
+                
+                End If Coupling_vectors_exist
+
+             End If Hold_inner_shell
+             
+          End Do Coupled_shells_loop
+          
+       End If Hold_outer_shell
+       
+    End Do Outer_shell_loop
+
+  Contains
+
+    Subroutine FT_complex
+    End Subroutine FT_complex
+
+    Subroutine FT_real
+    End Subroutine FT_real
+
   End Subroutine do_lattice_FT
     
     
