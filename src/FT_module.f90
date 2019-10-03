@@ -15,15 +15,29 @@ Module Numbers
 
 End Module Numbers
 
+MODULE EXPO_MODULE
+  USE NUMBERS, Only : float
+  REAL(FLOAT),DIMENSION(:,:),ALLOCATABLE :: EX,EXVRS
+END MODULE EXPO_MODULE
+
 Module MPP_Fourier_transform
 
+  Use numbers        , Only : wp => float
+  
   Implicit None
-
+    
   Public :: MPP_Lattice_FT
   
   Private
   
   Integer, Private, Parameter :: NOT_ME = -2
+
+  Type FT_coeffs_container
+     Private
+     Real   ( wp ), Dimension( : ), Allocatable :: real_ft_coeffs
+     Complex( wp ), Dimension( : ), Allocatable :: cmplx_ft_coeffs
+  End type FT_coeffs_container
+
 
 Contains
 
@@ -38,6 +52,8 @@ Contains
     Real( wp ), Dimension( : ), Intent( In    ) :: operator_G_space
     Type( ks_array )          , Intent( InOut ) :: operator_K_space
 
+    Type( FT_coeffs_container ), Dimension( : ), Allocatable :: ft_coeffs
+    
     Type( ks_point_info ) :: this_ks
 
     Integer, Dimension( :, : ), Allocatable :: global_to_local_row
@@ -72,6 +88,10 @@ Contains
     End Do
     Call operator_K_space%iterator_reset()
 
+    ! Due to k point parallelism this process may not actually hold any data. We could at this point
+    ! have a If( n_ks /= 0 ) BUT the code should work without that and it just adds complications. So
+    ! let's miss it out.
+
     ! Now get the mapping arrays for global indices to local indices
     Allocate( global_to_local_row( 1:n_ao, 1:n_ks_points ) )
     Allocate( global_to_local_col( 1:n_ao, 1:n_ks_points ) )
@@ -82,7 +102,7 @@ Contains
     Do While( this_ks%k_type /= K_POINT_NOT_EXIST )
        ks = ks + 1
        global_to_local_row( :, ks ) = operator_K_space%global_to_local( this_ks%k_indices, this_ks%spin, 'R' )
-       global_to_local_row( :, ks ) = operator_K_space%global_to_local( this_ks%k_indices, this_ks%spin, 'C' )
+       global_to_local_col( :, ks ) = operator_K_space%global_to_local( this_ks%k_indices, this_ks%spin, 'C' )
        this_ks = operator_K_space%iterator_next()
     End Do
     Call operator_K_space%iterator_reset()
@@ -140,6 +160,9 @@ Contains
     End Do
     Call operator_K_space%iterator_reset()
 
+    ! Now calculate the FT coeffs (complex exponentials) for each k point
+    Call calc_ft_coeffs( n_ks_points, operator_K_space, ft_coeffs )
+    
     ! REMEMBER DO DIAG TERMS ONCE!! - or do we need to as only writing ... need to think
     ! ALSO NEED ARGUMENT FOR COMPLEX CONJUGATION FOR ONE TRAINGLE COMPARED TO OTHER
     ! Now can fourier transfrom and produce one triangle of the K space matrices
@@ -183,6 +206,52 @@ Contains
        
   End Subroutine find_shell_start_and_finish
 
+  Subroutine calc_ft_coeffs( n_ks, operator_K_space, ft_coeffs )
+
+    ! Calculate the FT coeffs (complex exponentials) for each k point
+    
+    Use numbers        , Only : wp => float
+    Use Expo_module    , Only : ex
+    Use ks_array_module, Only : ks_array, ks_point_info, K_POINT_NOT_EXIST, K_POINT_COMPLEX
+
+    Integer                                                 , Intent( In    ) :: n_ks
+    Type( ks_array )                                        , Intent( InOut ) :: operator_K_space
+    Type( FT_coeffs_container ), Dimension( : ), Allocatable, Intent(   Out ) :: ft_coeffs
+
+    Interface
+       Subroutine expt( j1, j2, j3 )
+         Implicit None
+         Integer, Intent( In ) :: j1, j2, j3
+       End Subroutine expt
+       Subroutine expu( j1, j2, j3 )
+         Implicit None
+         Integer, Intent( In ) :: j1, j2, j3
+       End Subroutine expu
+    End Interface
+    
+    Type( ks_point_info ) :: this_ks
+
+    Integer :: ks
+    
+    Allocate( ft_coeffs( 1:n_ks ) )
+    Call operator_K_space%iterator_init()
+    ks = 0
+    this_ks = operator_K_space%iterator_next()
+    Calc_FT_Coeffs_loop: Do While( this_ks%k_type /= K_POINT_NOT_EXIST )
+       ks = ks + 1
+       Complex_or_real: If( this_ks%k_type == K_POINT_COMPLEX ) Then
+          Call expu( this_ks%k_indices( 1 ), this_ks%k_indices( 2 ), this_ks%k_indices( 3 ) )
+          ft_coeffs( ks )%cmplx_ft_coeffs = Cmplx( ex( 1, : ), ex( 2, : ), Kind = wp )
+       Else
+          Call expt( this_ks%k_indices( 1 ), this_ks%k_indices( 2 ), this_ks%k_indices( 3 ) )
+          ft_coeffs( ks )%real_ft_coeffs = ex( 1, : )
+       End If Complex_or_real
+       this_ks = operator_K_space%iterator_next()
+    End Do Calc_FT_Coeffs_loop
+    Call operator_K_space%iterator_reset()
+
+  End Subroutine calc_ft_coeffs
+
   Subroutine do_lattice_FT( n_ao, n_shells, size_shells, operator_G_space, &
        i_own_row, shell_start_row, shell_finish_row, &
        i_own_col, shell_start_col, shell_finish_col, &
@@ -190,7 +259,6 @@ Contains
 
     Use numbers        , Only : wp => float
     Use ks_array_module, Only : ks_array, ks_point_info, K_POINT_NOT_EXIST
-    Use Expo_module    , Only : ex
 
     Integer                      , Intent( In    ) :: n_ao
     Integer                      , Intent( In    ) :: n_shells
@@ -203,73 +271,50 @@ Contains
     Integer   , Dimension( :, : ), Intent( In    ) :: shell_start_col
     Integer   , Dimension( :, : ), Intent( In    ) :: shell_finish_col
     Type( ks_array )             , Intent( InOut ) :: operator_K_space
-
-    Type( ks_point_info ) :: this_ks
-
-    Type FT_coeffs_container
-       Real   ( wp ), Dimension( : ), Allocatable :: real_ft_coeffs
-       Complex( wp ), Dimension( : ), Allocatable :: cmplx_ft_coeffs
-    End type FT_coeffs_container
-
-    Type( FT_coeffs_container ), Dimension( : ), Allocatable :: ft_coeffs
-
-    Integer :: ks, n_ks
-    Integer :: n_G_vectors, start_G_vectors
-    Integer :: la1, ll2, la2
-
-    ! Calculate the FT coefficients at all K relevant to me
-    n_ks = Size( i_own_row, Dim = 2 )
-    Allocate( ft_coeffs( 1:n_ks ) )
-    Call operator_K_space%iterator_init()
-    ks = 0
-    this_ks = operator_K_space%iterator_next()
-    Calc_FT_Coeffs_loop: Do While( this_ks%k_type /= K_POINT_NOT_EXIST )
-       ks = ks + 1
-       Complex_or_real: If( this_ks%k_type == K_POINT_COMPLEX ) Then
-          Call expu( this_ks%k_indices( 1 ), this_ks%k_indices( 2 ), this_ks%k_indices( 3 ) )
-          ft_coeffs( ks )%cmplx_ft_coeffs = Cmplx( ex( 1, : ), ex( 2, : ) )
-       Else
-          Call expt( this_ks%k_indices( 1 ), this_ks%k_indices( 2 ), this_ks%k_indices( 3 ) )
-          ft_coeffs( ks )%real_ft_coeffs = ex( 1, : )
-       End If Complex_or_real
-       this_ks = operator_K_space%iterator_next()
-    End Do Calc_FT_Coeffs_loop
-
-    ! Loop over all the shells
-    Outer_shell_loop: Do la1 = 1, n_shells
-
-       ! Work out if this process store any contribution to this shell
-       Hold_outer_shell: If( Any( i_own_row( la1, : ) ) .Or. Any( i_own_col( la1, : ) ) ) Then
-
-          ! Loop over all shells that couple with the outer shell
-          Coupled_shells_loop: Do ll2 = icct( la1 ) + icc( la1 ), icct( la1 + 1 )
-
-             ! Work out which inner shell this is
-             la2 = ila12t( ll2 )
-
-             ! Only need to do something if this process holds some data for this shell couple
-             Hold_inner_shell: If( Any( i_own_row( la2, : ) ) .Or. Any( i_own_col( la2, : ) ) ) Then
-
-                ! Only need to do something if there actually any any non-zero elements
-                ! for this couple
-                n_G_vectors = idimfc( jpoint( ll2 ) )
-                Coupling_vectors_exist: If( n_G_vectors  /= 0 ) Then
-
-                   ! Getting here means that there is data to FT held on this process
-
-                   ! Find the list of G vectors relevant to this couple
-                   start_G_vectors = iccs3( ll2 )
-                   
-                End If Coupling_vectors_exist
-                
-             End If Hold_inner_shell
-             
-          End Do Coupled_shells_loop
-          
-       End If Hold_outer_shell
-       
-    End Do
-
+!!$
+!!$    Type( ks_point_info ) :: this_ks
+!!$
+!!$    Integer :: ks, n_ks
+!!$    Integer :: n_G_vectors, start_G_vectors
+!!$    Integer :: la1, ll2, la2
+!!$
+!!$    n_ks = Size( i_own_row, Dim = 2 )
+!!$
+!!$    ! Loop over all the shells
+!!$    Outer_shell_loop: Do la1 = 1, n_shells
+!!$
+!!$       ! Work out if this process store any contribution to this shell
+!!$       Hold_outer_shell: If( Any( i_own_row( la1, : ) ) .Or. Any( i_own_col( la1, : ) ) ) Then
+!!$
+!!$          ! Loop over all shells that couple with the outer shell
+!!$          Coupled_shells_loop: Do ll2 = icct( la1 ) + icc( la1 ), icct( la1 + 1 )
+!!$
+!!$             ! Work out which inner shell this is
+!!$             la2 = ila12t( ll2 )
+!!$
+!!$             ! Only need to do something if this process holds some data for this shell couple
+!!$             Hold_inner_shell: If( Any( i_own_row( la2, : ) ) .Or. Any( i_own_col( la2, : ) ) ) Then
+!!$
+!!$                ! Only need to do something if there actually any any non-zero elements
+!!$                ! for this couple
+!!$                n_G_vectors = idimfc( jpoint( ll2 ) )
+!!$                Coupling_vectors_exist: If( n_G_vectors  /= 0 ) Then
+!!$
+!!$                   ! Getting here means that there is data to FT held on this process
+!!$
+!!$                   ! Find the list of G vectors relevant to this couple
+!!$                   start_G_vectors = iccs3( ll2 )
+!!$                   
+!!$                End If Coupling_vectors_exist
+!!$                
+!!$             End If Hold_inner_shell
+!!$             
+!!$          End Do Coupled_shells_loop
+!!$          
+!!$       End If Hold_outer_shell
+!!$       
+!!$    End Do
+!!$
   End Subroutine do_lattice_FT
     
     
