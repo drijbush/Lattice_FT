@@ -168,10 +168,14 @@ Contains
     ! Now can fourier transfrom and produce one triangle of the K space matrices
 
     ! For moment do all in one routine - thinks about splitting into upper and lower traingles later
-    Call do_lattice_FT( n_ao, n_shells, size_shells, operator_G_space, &
-         i_own_row, shell_start_row, shell_finish_row, &
-         i_own_col, shell_start_col, shell_finish_col, &
-         operator_K_space )
+    ! Comment out while get args right <------------------------------------------------------!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!$    Call do_lattice_FT( n_ao, n_shells, size_shells, operator_G_space, &
+!!$         i_own_row, shell_start_row, shell_finish_row, &
+!!$         i_own_col, shell_start_col, shell_finish_col, &
+!!$         operator_K_space )
+
+
+    
     ! Forget this idea for the moment and do it simply
 !!$    ! And by transposing the ownership arrays we can do the other
 !!$    Call do_lattice_FT( n_ao, n_shells, size_shells, operator_G_space, &
@@ -252,14 +256,16 @@ Contains
 
   End Subroutine calc_ft_coeffs
 
-  Subroutine do_lattice_FT( n_ao, n_shells, size_shells, operator_G_space, &
+  Subroutine do_lattice_FT( get_xg, n_ao, n_shells, size_shells, operator_G_space, &
        i_own_row, shell_start_row, shell_finish_row, &
        i_own_col, shell_start_col, shell_finish_col, &
+       ft_coeffs, ila12t, idimfc, jpoint, ngshg, iccs3, icc, icct, &
        operator_K_space )
 
     Use numbers        , Only : wp => float
-    Use ks_array_module, Only : ks_array, ks_point_info, K_POINT_NOT_EXIST
+    Use ks_array_module, Only : ks_array, ks_point_info, K_POINT_NOT_EXIST, K_POINT_COMPLEX
 
+    Integer                                       , Intent( In    ) :: get_xg
     Integer                                       , Intent( In    ) :: n_ao
     Integer                                       , Intent( In    ) :: n_shells
     Integer                    , Dimension( :    ), Intent( In    ) :: size_shells
@@ -271,6 +277,13 @@ Contains
     Integer                    , Dimension( :, : ), Intent( In    ) :: shell_start_col
     Integer                    , Dimension( :, : ), Intent( In    ) :: shell_finish_col
     Type( FT_coeffs_container ), Dimension( :    ), Intent( In    ) :: ft_coeffs
+    Integer                    , Dimension( :    ), Intent( In    ) :: ila12t
+    Integer                    , Dimension( :    ), Intent( In    ) :: idimfc
+    Integer                    , Dimension( :    ), Intent( In    ) :: jpoint
+    Integer                    , Dimension( :    ), Intent( In    ) :: ngshg
+    Integer                    , Dimension( :    ), Intent( In    ) :: iccs3
+    Integer                    , Dimension( :    ), Intent( In    ) :: icc
+    Integer                    , Dimension( :    ), Intent( In    ) :: icct
     Type( ks_array )                              , Intent( InOut ) :: operator_K_space
 
     Complex( wp ), Dimension( : ), Allocatable :: fk_bit_complex
@@ -281,11 +294,13 @@ Contains
 
     Type( ks_point_info ) :: this_ks
 
+    Integer :: max_size_shell
     Integer :: ks, n_ks
     Integer :: n_G_vectors, start_G_vectors
-    Integer :: la1, ll2, la2
     Integer :: spin
     Integer :: nbf_la1, nbf_la2, nbf12
+    Integer :: la1, ll2, la2
+    Integer :: ierr
     
     ! Some basic information about the system
     max_size_shell = Maxval( size_shells( 1:n_shells ) )
@@ -342,8 +357,9 @@ Contains
                    n_G_vectors     = ngshg( iccs3( ll2 ) + 1 + n_g_vectors ) - start_G_vectors
 
                    ! Calculate the bits of the reducible matrix we need
+                   !!!!!!!!!!!!!!!!!!!SHOULD LIMIT SPIN TO ONLY WHAT NEEDED - might store all other spin on other procs !!!!!!!!!!!!!!
                    Real_space_spin_loop: Do spin = 1, n_spin
-                      Call get_red_l1_l2( get_xg, spin, l2, l1, fg_red_bit, ierr )
+                      Call get_red_l1_l2( get_xg, spin, la2, la1, fg_red_bit( 1:nbf12, spin ), ierr )
                    End Do Real_space_spin_loop
                    
                    ! Loop over ks points and spins
