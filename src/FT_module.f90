@@ -41,16 +41,26 @@ Module MPP_Fourier_transform
 
 Contains
 
-  Subroutine MPP_Lattice_FT( n_ao, n_shells, size_shells, operator_G_space, operator_K_space )
+  Subroutine MPP_Lattice_FT( get_xg, n_ao, n_shells, size_shells, operator_G_space, &
+       ft_coeffs, ila12t, idimfc, jpoint, ngshg, iccs3, icc, icct, &
+       operator_K_space )
 
     Use numbers        , Only : wp => float
     Use ks_array_module, Only : ks_array, ks_point_info, K_POINT_NOT_EXIST
 
-    Integer                   , Intent( In    ) :: n_ao
-    Integer                   , Intent( In    ) :: n_shells
-    Integer   , Dimension( : ), Intent( In    ) :: size_shells
-    Real( wp ), Dimension( : ), Intent( In    ) :: operator_G_space
-    Type( ks_array )          , Intent( InOut ) :: operator_K_space
+    Integer                   ,                    Intent( In    ) :: get_xg
+    Integer                   ,                    Intent( In    ) :: n_ao
+    Integer                   ,                    Intent( In    ) :: n_shells
+    Integer                   , Dimension( : )   , Intent( In    ) :: size_shells
+    Real( wp )                , Dimension( : )   , Intent( In    ) :: operator_G_space
+    Integer                   , Dimension( :    ), Intent( In    ) :: ila12t
+    Integer                   , Dimension( :    ), Intent( In    ) :: idimfc
+    Integer                   , Dimension( :    ), Intent( In    ) :: jpoint
+    Integer                   , Dimension( :    ), Intent( In    ) :: ngshg
+    Integer                   , Dimension( :    ), Intent( In    ) :: iccs3
+    Integer                   , Dimension( :    ), Intent( In    ) :: icc
+    Integer                   , Dimension( :    ), Intent( In    ) :: icct
+    Type( ks_array )          ,                    Intent( InOut ) :: operator_K_space
 
     Type( FT_coeffs_container ), Dimension( : ), Allocatable :: ft_coeffs
     
@@ -169,7 +179,7 @@ Contains
 
     ! For moment do all in one routine - thinks about splitting into upper and lower traingles later
     ! Comment out while get args right <------------------------------------------------------!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    Call do_lattice_FT( n_ao, n_shells, size_shells, operator_G_space, &
+    Call do_lattice_FT( get_xg, n_ao, n_shells, size_shells, operator_G_space, &
          i_own_row, shell_start_row, shell_finish_row, &
          i_own_col, shell_start_col, shell_finish_col, &
          ft_coeffs, ila12t, idimfc, jpoint, ngshg, iccs3, icc, icct, &
