@@ -169,10 +169,11 @@ Contains
 
     ! For moment do all in one routine - thinks about splitting into upper and lower traingles later
     ! Comment out while get args right <------------------------------------------------------!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!$    Call do_lattice_FT( n_ao, n_shells, size_shells, operator_G_space, &
-!!$         i_own_row, shell_start_row, shell_finish_row, &
-!!$         i_own_col, shell_start_col, shell_finish_col, &
-!!$         operator_K_space )
+    Call do_lattice_FT( n_ao, n_shells, size_shells, operator_G_space, &
+         i_own_row, shell_start_row, shell_finish_row, &
+         i_own_col, shell_start_col, shell_finish_col, &
+         ft_coeffs, ila12t, idimfc, jpoint, ngshg, iccs3, icc, icct, &
+         operator_K_space )
 
 
     
