@@ -41,7 +41,7 @@ Module MPP_Fourier_transform
 
 Contains
 
-  Subroutine MPP_Lattice_FT( get_xg, n_ao, n_shells, size_shells, operator_G_space, &
+  Subroutine MPP_Lattice_FT( get_xg, n_spin, n_ao, n_shells, size_shells, operator_G_space, &
        ft_coeffs, ila12t, idimfc, jpoint, ngshg, iccs3, icc, icct, &
        operator_K_space )
 
@@ -49,6 +49,7 @@ Contains
     Use ks_array_module, Only : ks_array, ks_point_info, K_POINT_NOT_EXIST
 
     Integer                   ,                    Intent( In    ) :: get_xg
+    Integer                   ,                    Intent( In    ) :: n_spin
     Integer                   ,                    Intent( In    ) :: n_ao
     Integer                   ,                    Intent( In    ) :: n_shells
     Integer                   , Dimension( : )   , Intent( In    ) :: size_shells
@@ -76,6 +77,7 @@ Contains
     Integer, Dimension( :, : ), Allocatable :: shell_finish_col
     
     Integer :: max_size_shell
+    Integer :: min_spin, max_spin
     Integer :: n_ks_points
     Integer :: shell_start, shell_finish
     Integer :: ks
@@ -92,9 +94,13 @@ Contains
     Call operator_K_space%iterator_init()
     n_ks_points = 0
     this_ks = operator_K_space%iterator_next()
+    min_spin =   Huge( min_spin )
+    max_spin = - Huge( max_spin )
     Do While( this_ks%k_type /= K_POINT_NOT_EXIST )
        n_ks_points = n_ks_points + 1
        this_ks = operator_K_space%iterator_next()
+       min_spin = Min( min_spin, this_ks%spin )
+       max_spin = Min( max_spin, this_ks%spin )
     End Do
     Call operator_K_space%iterator_reset()
 
@@ -179,7 +185,7 @@ Contains
 
     ! For moment do all in one routine - thinks about splitting into upper and lower traingles later
     ! Comment out while get args right <------------------------------------------------------!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    Call do_lattice_FT( get_xg, n_ao, n_shells, size_shells, operator_G_space, &
+    Call do_lattice_FT( get_xg, min_spin, max_spin, n_ao, n_shells, size_shells, operator_G_space, &
          i_own_row, shell_start_row, shell_finish_row, &
          i_own_col, shell_start_col, shell_finish_col, &
          ft_coeffs, ila12t, idimfc, jpoint, ngshg, iccs3, icc, icct, &
@@ -267,7 +273,7 @@ Contains
 
   End Subroutine calc_ft_coeffs
 
-  Subroutine do_lattice_FT( get_xg, n_ao, n_shells, size_shells, operator_G_space, &
+  Subroutine do_lattice_FT( get_xg, min_spin, max_spin, n_ao, n_shells, size_shells, operator_G_space, &
        i_own_row, shell_start_row, shell_finish_row, &
        i_own_col, shell_start_col, shell_finish_col, &
        ft_coeffs, ila12t, idimfc, jpoint, ngshg, iccs3, icc, icct, &
@@ -277,6 +283,8 @@ Contains
     Use ks_array_module, Only : ks_array, ks_point_info, K_POINT_NOT_EXIST, K_POINT_COMPLEX
 
     Integer                                       , Intent( In    ) :: get_xg
+    Integer                                       , Intent( In    ) :: min_spin
+    Integer                                       , Intent( In    ) :: max_spin
     Integer                                       , Intent( In    ) :: n_ao
     Integer                                       , Intent( In    ) :: n_shells
     Integer                    , Dimension( :    ), Intent( In    ) :: size_shells
@@ -321,7 +329,7 @@ Contains
 
     ! Bit of memory to store the bit of the reducible G space represantation of the 
     ! matrix that we generate
-    Allocate( fg_red_bit( 1:max_size_shell * max_size_shell, 1:2 ) )
+    Allocate( fg_red_bit( 1:max_size_shell * max_size_shell, min_spin:max_spin ) )
 
     ! Similarly for the bit of the reciprocal space matrix
     Allocate( fk_bit_complex( 1:max_size_shell * max_size_shell ) )
@@ -360,7 +368,7 @@ Contains
                    ! Getting here means that there is data to FT held on this process
 
                    ! Number of basis functions in this shell
-                   nbf_la1 = size_shells( la1 )
+                   nbf_la2 = size_shells( la2 )
                    nbf12   = nbf_la1 * nbf_la2
                    
                    ! Find the list of G vectors relevant to this couple
@@ -368,8 +376,7 @@ Contains
                    n_G_vectors     = ngshg( iccs3( ll2 ) + 1 + n_g_vectors ) - start_G_vectors
 
                    ! Calculate the bits of the reducible matrix we need
-                   !!!!!!!!!!!!!!!!!!!SHOULD LIMIT SPIN TO ONLY WHAT NEEDED - might store all other spin on other procs !!!!!!!!!!!!!!
-                   Real_space_spin_loop: Do spin = 1, n_spin
+                   Real_space_spin_loop: Do spin = min_spin, max_spin
                       Call get_red_l1_l2( get_xg, spin, la2, la1, fg_red_bit( 1:nbf12, spin ), ierr )
                    End Do Real_space_spin_loop
                    
