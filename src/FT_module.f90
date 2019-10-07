@@ -41,15 +41,14 @@ Module MPP_Fourier_transform
 
 Contains
 
-  Subroutine MPP_Lattice_FT( get_xg, n_spin, n_ao, n_shells, size_shells, operator_G_space, &
-       ft_coeffs, ila12t, idimfc, jpoint, ngshg, iccs3, icc, icct, &
+  Subroutine MPP_Lattice_FT( get_xg, n_ao, n_shells, size_shells, operator_G_space, &
+       ft_coeffs, ila12t, idimfc, jpoint, ngshg, nqgshg, iccs3, icc, icct, &
        operator_K_space )
 
     Use numbers        , Only : wp => float
     Use ks_array_module, Only : ks_array, ks_point_info, K_POINT_NOT_EXIST
 
     Integer                   ,                    Intent( In    ) :: get_xg
-    Integer                   ,                    Intent( In    ) :: n_spin
     Integer                   ,                    Intent( In    ) :: n_ao
     Integer                   ,                    Intent( In    ) :: n_shells
     Integer                   , Dimension( : )   , Intent( In    ) :: size_shells
@@ -58,6 +57,7 @@ Contains
     Integer                   , Dimension( :    ), Intent( In    ) :: idimfc
     Integer                   , Dimension( :    ), Intent( In    ) :: jpoint
     Integer                   , Dimension( :    ), Intent( In    ) :: ngshg
+    Integer                   , Dimension( :    ), Intent( In    ) :: nqgshg
     Integer                   , Dimension( :    ), Intent( In    ) :: iccs3
     Integer                   , Dimension( :    ), Intent( In    ) :: icc
     Integer                   , Dimension( :    ), Intent( In    ) :: icct
@@ -100,7 +100,7 @@ Contains
        n_ks_points = n_ks_points + 1
        this_ks = operator_K_space%iterator_next()
        min_spin = Min( min_spin, this_ks%spin )
-       max_spin = Min( max_spin, this_ks%spin )
+       max_spin = Max( max_spin, this_ks%spin )
     End Do
     Call operator_K_space%iterator_reset()
 
@@ -124,6 +124,8 @@ Contains
     Call operator_K_space%iterator_reset()
 
     ! From this generate a list of shells this process holds at least part of
+    ! Peobably don;t need ks dependence as generating operator in AO basis, not MO - need a quick think
+    ! then can probably simplify
     Allocate( i_own_row( 1:n_shells, 1:n_ks_points ) )
     Allocate( i_own_col( 1:n_shells, 1:n_ks_points ) )
     ! And populate the array
@@ -163,12 +165,16 @@ Contains
        Do i_shell = 1, n_shells
           shell_finish = shell_start + size_shells( i_shell ) - 1
           If( i_own_row( i_shell, ks ) ) Then
-             Call find_shell_start_and_finish( global_to_local_row( :, ks ), shell_start, shell_finish, &
-                  shell_start_row ( i_shell, ks ), shell_finish_row( i_shell, ks ) )
+!!$             Call find_shell_start_and_finish( global_to_local_row( :, ks ), shell_start, shell_finish, &
+!!$                  shell_start_row ( i_shell, ks ), shell_finish_row( i_shell, ks ) )
+             shell_start_row ( i_shell, ks ) = shell_start
+             shell_finish_row( i_shell, ks ) = shell_finish
           End If
           If( i_own_col( i_shell, ks ) ) Then
-             Call find_shell_start_and_finish( global_to_local_col( :, ks ), shell_start, shell_finish, &
-                  shell_start_col ( i_shell, ks ), shell_finish_col( i_shell, ks ) )
+!!$             Call find_shell_start_and_finish( global_to_local_col( :, ks ), shell_start, shell_finish, &
+!!$                  shell_start_col ( i_shell, ks ), shell_finish_col( i_shell, ks ) )
+             shell_start_col ( i_shell, ks ) = shell_start
+             shell_finish_col( i_shell, ks ) = shell_finish
           End If
           shell_start = shell_finish + 1
        End Do
@@ -188,7 +194,7 @@ Contains
     Call do_lattice_FT( get_xg, min_spin, max_spin, n_ao, n_shells, size_shells, operator_G_space, &
          i_own_row, shell_start_row, shell_finish_row, &
          i_own_col, shell_start_col, shell_finish_col, &
-         ft_coeffs, ila12t, idimfc, jpoint, ngshg, iccs3, icc, icct, &
+         ft_coeffs, ila12t, idimfc, jpoint, ngshg, nqgshg, iccs3, icc, icct, &
          operator_K_space )
 
 
@@ -276,7 +282,7 @@ Contains
   Subroutine do_lattice_FT( get_xg, min_spin, max_spin, n_ao, n_shells, size_shells, operator_G_space, &
        i_own_row, shell_start_row, shell_finish_row, &
        i_own_col, shell_start_col, shell_finish_col, &
-       ft_coeffs, ila12t, idimfc, jpoint, ngshg, iccs3, icc, icct, &
+       ft_coeffs, ila12t, idimfc, jpoint, ngshg, nqgshg, iccs3, icc, icct, &
        operator_K_space )
 
     Use numbers        , Only : wp => float
@@ -300,17 +306,18 @@ Contains
     Integer                    , Dimension( :    ), Intent( In    ) :: idimfc
     Integer                    , Dimension( :    ), Intent( In    ) :: jpoint
     Integer                    , Dimension( :    ), Intent( In    ) :: ngshg
+    Integer                    , Dimension( :    ), Intent( In    ) :: nqgshg
     Integer                    , Dimension( :    ), Intent( In    ) :: iccs3
     Integer                    , Dimension( :    ), Intent( In    ) :: icc
     Integer                    , Dimension( :    ), Intent( In    ) :: icct
     Type( ks_array )                              , Intent( InOut ) :: operator_K_space
 
-    Complex( wp ), Dimension( : ), Allocatable :: fk_bit_complex
-
     Real( wp ), Dimension( :, : ), Allocatable :: fg_red_bit
     
-    Real( wp ), Dimension( : ), Allocatable :: fk_bit_real
+    Real( wp ), Dimension( : ), Allocatable :: fk_bit
 
+    Real( wp ), Dimension( :, : ), Allocatable :: ex 
+    
     Type( ks_point_info ) :: this_ks
 
     Integer :: max_size_shell
@@ -331,14 +338,22 @@ Contains
     ! matrix that we generate
     Allocate( fg_red_bit( 1:max_size_shell * max_size_shell, min_spin:max_spin ) )
 
-    ! Similarly for the bit of the reciprocal space matrix
-    Allocate( fk_bit_complex( 1:max_size_shell * max_size_shell ) )
-    Allocate( fk_bit_real   ( 1:max_size_shell * max_size_shell ) )
+    ! Similarly for the bit of the reciprocal space matrix. Factor of 2 for complex 
+    Allocate( fk_bit( 1:2 * max_size_shell * max_size_shell ) )
 
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     ! NEED TO ADD ZEROING OPERTAOR_K_SPACE
     ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+    ! Temporary storage for FT coeffs for a given shell couple at a given k point
+    ! Avoid taking size of an unallocated array, which is not alloed by the standard
+    ! The size of the first element is enough as all members should be the same size
+    If( Allocated( ft_coeffs( 1 )%cmplx_ft_coeffs ) ) Then
+       Allocate( ex( 1:Size( ft_coeffs( 1 )%cmplx_ft_coeffs ), 1:2 ) )
+    Else
+       Allocate( ex( 1:Size( ft_coeffs( 1 )%real_ft_coeffs ), 1:2  ) )
+    End If
 
     ! NEED TO FIND NUMBER OF SPINS
 
@@ -409,9 +424,57 @@ Contains
   Contains
 
     Subroutine FT_complex
+
+      Integer :: this_G
+      Integer :: diag_block_size
+      Integer :: i
+
+      Complex( wp ), Dimension( :, : ), Allocatable :: wibble
+
+      ! Get the FT coeffs that are needed at this k point
+      Do i = 1, n_G_vectors
+         this_G = nqgshg( start_G_vectors + i )
+         ex( i, 1 ) = Aimag( ft_coeffs( ks )%cmplx_ft_coeffs( i )            )
+         ex( i, 2 ) = Real ( ft_coeffs( ks )%cmplx_ft_coeffs( i ), Kind = wp )
+      End Do
+
+      ! Storage of reducible matrix differs for on and off diagonal blocks
+      Diag_or_off_diag_block: If( la1 == la2 ) Then
+         diag_block_size = iky( nbf_la1 )
+         fk_bit( 1:diag_block_size * 2 ) = 0.0_wp
+         ! Do the Lattice transform on this block
+         ! Need to think on this so CAN GET FG_RED_BIT AS 2D!!
+         ! CHECK SIZE OF FG_RED_BIT HERE!!
+         Call mxmb( fg_red_bit( :, this_ks%spin ), 1, diag_block_size, ex, 1, Size( ex, Dim = 1 ), &
+              fk_bit, 1, diag_block_size, diag_block_size, n_G_vectors, 2 )
+         ! Now store
+         Call operator_K_space%set_by_global( this_ks%k_indices, this_ks%spin, &
+              shell_start_row( la1, ks ), shell_finish_row( la1, ks ), &
+              shell_start_col( la1, ks ), shell_finish_col( la1, ks ), &
+              wibble )
+      Else
+         ! Zero result matrix
+         fk_bit( 1:nbf12 * 2 ) = 0.0_wp
+         ! Do the Lattice transform on this block
+         ! Need to think on this so CAN GET FG_RED_BIT AS 2D!!
+         Call mxmb( fg_red_bit( 1:nbf12, this_ks%spin ), 1, nbf12, ex, 1, Size( ex, Dim = 1 ), &
+              fk_bit, 1, nbf12, nbf12, n_G_vectors, 2 )
+         ! Now store
+         Call operator_K_space%set_by_global( this_ks%k_indices, this_ks%spin, &
+              shell_start_row( la1, ks ), shell_finish_row( la1, ks ), &
+              shell_start_col( la2, ks ), shell_finish_col( la2, ks ), &
+              wibble )
+         Call operator_K_space%set_by_global( this_ks%k_indices, this_ks%spin, &
+              shell_start_row( la2, ks ), shell_finish_row( la2, ks ), &
+              shell_start_col( la1, ks ), shell_finish_col( la1, ks ), &
+              Conjg( Transpose( wibble ) ) )
+      End If Diag_or_off_diag_block
+      
     End Subroutine FT_complex
 
     Subroutine FT_real
+
+
     End Subroutine FT_real
 
   End Subroutine do_lattice_FT
