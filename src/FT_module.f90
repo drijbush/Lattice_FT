@@ -124,8 +124,6 @@ Contains
     Call operator_K_space%iterator_reset()
 
     ! From this generate a list of shells this process holds at least part of
-    ! Peobably don;t need ks dependence as generating operator in AO basis, not MO - need a quick think
-    ! then can probably simplify
     Allocate( i_own_row( 1:n_shells, 1:n_ks_points ) )
     Allocate( i_own_col( 1:n_shells, 1:n_ks_points ) )
     ! And populate the array
@@ -165,14 +163,10 @@ Contains
        Do i_shell = 1, n_shells
           shell_finish = shell_start + size_shells( i_shell ) - 1
           If( i_own_row( i_shell, ks ) ) Then
-!!$             Call find_shell_start_and_finish( global_to_local_row( :, ks ), shell_start, shell_finish, &
-!!$                  shell_start_row ( i_shell, ks ), shell_finish_row( i_shell, ks ) )
              shell_start_row ( i_shell, ks ) = shell_start
              shell_finish_row( i_shell, ks ) = shell_finish
           End If
           If( i_own_col( i_shell, ks ) ) Then
-!!$             Call find_shell_start_and_finish( global_to_local_col( :, ks ), shell_start, shell_finish, &
-!!$                  shell_start_col ( i_shell, ks ), shell_finish_col( i_shell, ks ) )
              shell_start_col ( i_shell, ks ) = shell_start
              shell_finish_col( i_shell, ks ) = shell_finish
           End If
@@ -190,14 +184,11 @@ Contains
     ! Now can fourier transfrom and produce one triangle of the K space matrices
 
     ! For moment do all in one routine - thinks about splitting into upper and lower traingles later
-    ! Comment out while get args right <------------------------------------------------------!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     Call do_lattice_FT( get_xg, min_spin, max_spin, n_ao, n_shells, size_shells, operator_G_space, &
          i_own_row, shell_start_row, shell_finish_row, &
          i_own_col, shell_start_col, shell_finish_col, &
          ft_coeffs, ila12t, idimfc, jpoint, ngshg, nqgshg, iccs3, icc, icct, &
          operator_K_space )
-
-
     
     ! Forget this idea for the moment and do it simply
 !!$    ! And by transposing the ownership arrays we can do the other
@@ -207,31 +198,6 @@ Contains
 !!$         operator_K_space )
 
   End Subroutine MPP_Lattice_FT
-
-  Subroutine find_shell_start_and_finish( global_to_local, shell_start, shell_finish, my_shell_start, my_shell_finish )
-
-    Integer, Dimension( : ), Intent( In    ) :: global_to_local
-    Integer                , Intent( In    ) :: shell_start
-    Integer                , Intent( In    ) :: shell_finish
-    Integer                , Intent(   Out ) :: my_shell_start
-    Integer                , Intent(   Out ) :: my_shell_finish
-
-    Integer :: first_index, last_index
-
-    ! I own a bit of this shell, work out the first index I hold
-    first_index = shell_start
-    Do While( global_to_local( first_index ) <= 0 .And. first_index < shell_finish )
-       first_index = first_index + 1
-    End Do
-    ! Now find last index we hold being careful not to over run the end
-    last_index = first_index
-    Do While( global_to_local(  last_index ) >  0 .And. last_index < shell_finish )
-       last_index = last_index + 1
-    End Do
-    my_shell_start  = first_index
-    my_shell_finish = last_index
-       
-  End Subroutine find_shell_start_and_finish
 
   Subroutine calc_ft_coeffs( n_ks, operator_K_space, ft_coeffs )
 
@@ -362,8 +328,6 @@ Contains
     Else
        Allocate( ex( 1:Size( ft_coeffs( 1 )%real_ft_coeffs ), 1:2  ) )
     End If
-
-    ! NEED TO FIND NUMBER OF SPINS
 
     ! Loop over all the shells
     Outer_shell_loop: Do la1 = 1, n_shells
