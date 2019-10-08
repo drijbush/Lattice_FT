@@ -51,8 +51,8 @@ Contains
     Integer                   ,                    Intent( In    ) :: get_xg
     Integer                   ,                    Intent( In    ) :: n_ao
     Integer                   ,                    Intent( In    ) :: n_shells
-    Integer                   , Dimension( : )   , Intent( In    ) :: size_shells
-    Real( wp )                , Dimension( : )   , Intent( In    ) :: operator_G_space
+    Integer                   , Dimension( :    ), Intent( In    ) :: size_shells
+    Real( wp )                , Dimension( :    ), Intent( In    ) :: operator_G_space
     Integer                   , Dimension( :    ), Intent( In    ) :: ila12t
     Integer                   , Dimension( :    ), Intent( In    ) :: idimfc
     Integer                   , Dimension( :    ), Intent( In    ) :: jpoint
@@ -312,8 +312,12 @@ Contains
     Integer                    , Dimension( :    ), Intent( In    ) :: icct
     Type( ks_array )                              , Intent( InOut ) :: operator_K_space
 
+    Complex( wp ), Dimension( :, : ), Allocatable :: fk_bit_2d_complex
+
     Real( wp ), Dimension( :, : ), Allocatable :: fg_red_bit
     
+    Real( wp ), Dimension( :, : ), Allocatable :: fk_bit_2d_real
+
     Real( wp ), Dimension( : ), Allocatable :: fk_bit
 
     Real( wp ), Dimension( :, : ), Allocatable :: ex 
@@ -341,6 +345,10 @@ Contains
     ! Similarly for the bit of the reciprocal space matrix. Factor of 2 for complex 
     Allocate( fk_bit( 1:2 * max_size_shell * max_size_shell ) )
 
+    ! And the 2d representations of the bit of the reciprocal space matrix.
+    Allocate( fk_bit_2d_complex( 1:max_size_shell, 1:max_size_shell ) )
+    Allocate( fk_bit_2d_real   ( 1:max_size_shell, 1:max_size_shell ) )
+    
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     ! NEED TO ADD ZEROING OPERTAOR_K_SPACE
     ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -392,6 +400,7 @@ Contains
 
                    ! Calculate the bits of the reducible matrix we need
                    Real_space_spin_loop: Do spin = min_spin, max_spin
+                      !!!! REALLY OUGHT TO FIX INTERFACE SO USES OPERATOR_G_SPACE and not through "common" !!!!!!
                       Call get_red_l1_l2( get_xg, spin, la2, la1, fg_red_bit( 1:nbf12, spin ), ierr )
                    End Do Real_space_spin_loop
                    
@@ -426,54 +435,155 @@ Contains
     Subroutine FT_complex
 
       Integer :: this_G
-      Integer :: diag_block_size
+      Integer :: shell_shell_block_size
+      Integer :: ind_r, ind_c, ibf1, ibf2
       Integer :: i
-
-      Complex( wp ), Dimension( :, : ), Allocatable :: wibble
 
       ! Get the FT coeffs that are needed at this k point
       Do i = 1, n_G_vectors
          this_G = nqgshg( start_G_vectors + i )
-         ex( i, 1 ) = Aimag( ft_coeffs( ks )%cmplx_ft_coeffs( i )            )
-         ex( i, 2 ) = Real ( ft_coeffs( ks )%cmplx_ft_coeffs( i ), Kind = wp )
+         ex( i, 1 ) = Real ( ft_coeffs( ks )%cmplx_ft_coeffs( this_G ), Kind = wp )
+         ex( i, 2 ) = Aimag( ft_coeffs( ks )%cmplx_ft_coeffs( this_G )            )
       End Do
 
       ! Storage of reducible matrix differs for on and off diagonal blocks
       Diag_or_off_diag_block: If( la1 == la2 ) Then
-         diag_block_size = iky( nbf_la1 )
-         fk_bit( 1:diag_block_size * 2 ) = 0.0_wp
+
+         ! Diagonal Block
+         shell_shell_block_size = ( ( nbf_la1 + 1 ) * ( nbf_la1 + 2 ) ) / 2
+         ! Zero result matrix - * 2 for complex numbers
+         fk_bit( 1:shell_shell_block_size * 2 ) = 0.0_wp
          ! Do the Lattice transform on this block
-         ! Need to think on this so CAN GET FG_RED_BIT AS 2D!!
-         ! CHECK SIZE OF FG_RED_BIT HERE!!
-         Call mxmb( fg_red_bit( :, this_ks%spin ), 1, diag_block_size, ex, 1, Size( ex, Dim = 1 ), &
-              fk_bit, 1, diag_block_size, diag_block_size, n_G_vectors, 2 )
+         Call mxmb( fg_red_bit( :, this_ks%spin ), 1, shell_shell_block_size, ex, 1, Size( ex, Dim = 1 ), &
+              fk_bit, 1, shell_shell_block_size, shell_shell_block_size, n_G_vectors, 2 )
+         ! Put into 2D matrix
+         ind_r = 0                      ! index of real part in fk_bit
+         ind_c = shell_shell_block_size ! index of complex part
+         ! Fill in the upper triangle
+         Do ibf2 = 1, nbf_la2
+            Do ibf1 = 1, ibf2
+               ind_r = ind_r + 1
+               ind_c = ind_c + 1
+               fk_bit_2d_complex( ibf1, ibf2 ) = Cmplx( fk_bit( ind_r ), fk_bit( ind_c ), Kind = wp )
+            End Do
+         End Do
+         ! And the lower traing by Hermiticity
+         Do ibf2 = 1, nbf_la2
+            Do ibf1 = ibf2 + 1, nbf_la1
+               fk_bit_2d_complex( ibf2, ibf1 ) = Conjg( fk_bit_2d_complex( ibf1, ibf2 ) )
+            End Do
+         End Do
          ! Now store
          Call operator_K_space%set_by_global( this_ks%k_indices, this_ks%spin, &
               shell_start_row( la1, ks ), shell_finish_row( la1, ks ), &
               shell_start_col( la1, ks ), shell_finish_col( la1, ks ), &
-              wibble )
+              fk_bit_2d_complex )
+
       Else
-         ! Zero result matrix
-         fk_bit( 1:nbf12 * 2 ) = 0.0_wp
+
+         ! Off diagonal block
+         shell_shell_block_size = nbf_la1 * nbf_la2
+         ! Zero result matrix - * 2 for complex numbers
+         fk_bit( 1:shell_shell_block_size * 2 ) = 0.0_wp
          ! Do the Lattice transform on this block
-         ! Need to think on this so CAN GET FG_RED_BIT AS 2D!!
-         Call mxmb( fg_red_bit( 1:nbf12, this_ks%spin ), 1, nbf12, ex, 1, Size( ex, Dim = 1 ), &
-              fk_bit, 1, nbf12, nbf12, n_G_vectors, 2 )
+         Call mxmb( fg_red_bit( 1:shell_shell_block_size, this_ks%spin ), 1, shell_shell_block_size, ex, 1, Size( ex, Dim = 1 ), &
+              fk_bit, 1, shell_shell_block_size, shell_shell_block_size, n_G_vectors, 2 )
+         ! Put into 2D matrix
+         ind_r = 0                      ! index of real part in fk_bit
+         ind_c = shell_shell_block_size ! index of complex part
+         Do ibf2 = 1, nbf_la2
+            Do ibf1 = 1, nbf_la1
+               ind_r = ind_r + 1
+               ind_c = ind_c + 1
+               fk_bit_2d_complex( ibf1, ibf2 ) = Cmplx( fk_bit( ind_r ), fk_bit( ind_c ), Kind = wp )
+            End Do
+         End Do
          ! Now store
          Call operator_K_space%set_by_global( this_ks%k_indices, this_ks%spin, &
               shell_start_row( la1, ks ), shell_finish_row( la1, ks ), &
               shell_start_col( la2, ks ), shell_finish_col( la2, ks ), &
-              wibble )
+              fk_bit_2d_complex )
          Call operator_K_space%set_by_global( this_ks%k_indices, this_ks%spin, &
               shell_start_row( la2, ks ), shell_finish_row( la2, ks ), &
               shell_start_col( la1, ks ), shell_finish_col( la1, ks ), &
-              Conjg( Transpose( wibble ) ) )
+              Conjg( Transpose( fk_bit_2d_complex ) ) )
+         
       End If Diag_or_off_diag_block
       
     End Subroutine FT_complex
 
     Subroutine FT_real
 
+      Integer :: this_G
+      Integer :: shell_shell_block_size
+      Integer :: ind_r, ind_c, ibf1, ibf2
+      Integer :: i
+
+      ! Get the FT coeffs that are needed at this k point
+      Do i = 1, n_G_vectors
+         this_G = nqgshg( start_G_vectors + i )
+         ex( i, 1 ) = ft_coeffs( ks )%real_ft_coeffs( this_G )
+      End Do
+
+      ! Storage of reducible matrix differs for on and off diagonal blocks
+      Diag_or_off_diag_block: If( la1 == la2 ) Then
+
+         ! Diagonal Block
+         shell_shell_block_size = ( ( nbf_la1 + 1 ) * ( nbf_la1 + 2 ) ) / 2
+         ! Zero result matrix
+         fk_bit( 1:shell_shell_block_size ) = 0.0_wp
+         ! Do the Lattice transform on this block
+         Call mxmb( fg_red_bit( :, this_ks%spin ), 1, shell_shell_block_size, ex, 1, 1, &
+              fk_bit, 1, 1, shell_shell_block_size, n_G_vectors, 1 )
+         ! Put into 2D matrix
+         ind_r = 0                      ! index of part in fk_bit
+         ! Fill in the upper triangle
+         Do ibf2 = 1, nbf_la2
+            Do ibf1 = 1, ibf2
+               ind_r = ind_r + 1
+               fk_bit_2d_real( ibf1, ibf2 ) = fk_bit( ind_r )
+            End Do
+         End Do
+         ! And the lower traing by Hermiticity
+         Do ibf2 = 1, nbf_la2
+            Do ibf1 = ibf2 + 1, nbf_la1
+               fk_bit_2d_real( ibf2, ibf1 ) = fk_bit_2d_real( ibf1, ibf2 )
+            End Do
+         End Do
+         ! Now store
+         Call operator_K_space%set_by_global( this_ks%k_indices, this_ks%spin, &
+              shell_start_row( la1, ks ), shell_finish_row( la1, ks ), &
+              shell_start_col( la1, ks ), shell_finish_col( la1, ks ), &
+              fk_bit_2d_real )
+
+      Else
+
+         ! Off diagonal block
+         shell_shell_block_size = nbf_la1 * nbf_la2
+         ! Zero result matrix
+         fk_bit( 1:shell_shell_block_size ) = 0.0_wp
+         ! Do the Lattice transform on this block
+         Call mxmb( fg_red_bit( 1:shell_shell_block_size, this_ks%spin ), 1, shell_shell_block_size, ex, 1, 1, &
+              fk_bit, 1, 1, shell_shell_block_size, n_G_vectors, 1 )
+         ! Put into 2D matrix
+         ind_r = 0                      ! index of part in fk_bit
+         Do ibf2 = 1, nbf_la2
+            Do ibf1 = 1, nbf_la1
+               ind_r = ind_r + 1
+               fk_bit_2d_real( ibf1, ibf2 ) = fk_bit( ind_r )
+            End Do
+         End Do
+         ! Now store
+         Call operator_K_space%set_by_global( this_ks%k_indices, this_ks%spin, &
+              shell_start_row( la1, ks ), shell_finish_row( la1, ks ), &
+              shell_start_col( la2, ks ), shell_finish_col( la2, ks ), &
+              fk_bit_2d_real )
+         Call operator_K_space%set_by_global( this_ks%k_indices, this_ks%spin, &
+              shell_start_row( la2, ks ), shell_finish_row( la2, ks ), &
+              shell_start_col( la1, ks ), shell_finish_col( la1, ks ), &
+              Transpose( fk_bit_2d_real ) )
+         
+      End If Diag_or_off_diag_block
 
     End Subroutine FT_real
 
