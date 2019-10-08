@@ -106,7 +106,7 @@ Contains
 
     ! Due to k point parallelism this process may not actually hold any data. We could at this point
     ! have a If( n_ks /= 0 ) BUT the code should work without that and it just adds complications. So
-    ! let's miss it out.
+    ! let's miss it out - it will help find bugs.
 
     ! Now get the mapping arrays for global indices to local indices
     Allocate( global_to_local_row( 1:n_ao, 1:n_ks_points ) )
@@ -291,7 +291,7 @@ Contains
     Type( ks_point_info ) :: this_ks
 
     Integer :: max_size_shell
-    Integer :: ks, n_ks
+    Integer :: ks
     Integer :: n_G_vectors, start_G_vectors
     Integer :: spin
     Integer :: nbf_la1, nbf_la2, nbf12
@@ -300,9 +300,6 @@ Contains
     
     ! Some basic information about the system
     max_size_shell = Maxval( size_shells( 1:n_shells ) )
-
-    ! NUmber of KS points
-    n_ks = Size( i_own_row, Dim = 2 )
 
     ! Bit of memory to store the bit of the reducible G space represantation of the 
     ! matrix that we generate
