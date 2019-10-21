@@ -312,11 +312,9 @@ Contains
     Allocate( fk_bit_2d_complex( 1:max_size_shell, 1:max_size_shell ) )
     Allocate( fk_bit_2d_real   ( 1:max_size_shell, 1:max_size_shell ) )
     
-    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    ! NEED TO ADD ZEROING OPERTAOR_K_SPACE
-    ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
+    ! Initialise the k space representation of the operator
+    operator_K_space = 0.0_wp
+    
     ! Temporary storage for FT coeffs for a given shell couple at a given k point
     ! Avoid taking size of an unallocated array, which is not alloed by the standard
     ! The size of the first element is enough as all members should be the same size
@@ -372,11 +370,12 @@ Contains
                    KS_point_loop: Do While( this_ks%k_type /= K_POINT_NOT_EXIST )
                       ks = ks + 1
                       spin = this_ks%spin
-                      Real_Or_Complex: If( this_ks%k_type == K_POINT_COMPLEX  ) Then
+                      Select Case( this_ks%k_type )
+                      Case( K_POINT_COMPLEX )
                          Call FT_complex
-                      Else
+                      Case( K_POINT_REAL )
                          Call FT_real
-                      End If Real_Or_Complex
+                      End Select
                       this_ks = operator_K_space%iterator_next()
                    End Do KS_point_loop
                    Call operator_K_space%iterator_reset()
