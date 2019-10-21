@@ -14,6 +14,7 @@ Module ks_matrix_module
    Contains
      ! Public methods
      Procedure, Public :: create                 => ks_matrix_create                     !! Create a ks_matrix
+     Generic  , Public :: Assignment( = )        => set_real_scalar                      !! Set all elements in the array to a real constant scalar
      Generic  , Public :: Operator( .Dagger. )   => dagger                               !! Dagger a ks_matrix
      Generic  , Public :: Operator( * )          => multiply                             !! Multiply 2 ks_matrix's
      Generic  , Public :: Operator( * )          => rscal_multiply                       !! Pre-multiply by a real scalar
@@ -37,6 +38,7 @@ Module ks_matrix_module
      Procedure, Public :: global_to_local        => ks_matrix_global_to_local            !! Get an array for mapping global indices to local  ones
      Procedure, Public :: local_to_global        => ks_matrix_local_to_global            !! Get an array for mapping local  indices to global ones
      ! Private implementations
+     Procedure,            Private :: set_real_scalar      => ks_matrix_set_real_scalar
      Procedure,            Private :: dagger               => ks_matrix_dagger
      Procedure,            Private :: multiply             => ks_matrix_mult
      Procedure, Pass( A ), Private :: rscal_multiply       => ks_matrix_rscal_mult
@@ -409,6 +411,16 @@ Contains
     C%matrix = A%matrix%extract( m, n, p, q )
     
   End Function ks_matrix_extract
+
+  Subroutine ks_matrix_set_real_scalar( A, data )
+
+    !! Set the whole of the matrix to a constant real scalar
+    Class( ks_matrix ), Intent( InOut ) :: A
+    Real( wp )        , Intent( In    ) :: data
+
+    A%matrix = data
+    
+  End Subroutine ks_matrix_set_real_scalar
 
   Subroutine ks_matrix_set_global_real( A, m, n, p, q, data )
 

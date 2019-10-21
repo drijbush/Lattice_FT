@@ -52,6 +52,7 @@ Module ks_array_module
      Procedure, Public :: create                  => ks_array_create                   !! Create a ks_array
      Procedure, Public :: split_ks                => ks_array_split_ks                 !! Split the distribution so k point //ism can be used
      Procedure, Public :: join_ks                 => ks_array_join_ks                  !! Rejoin a split_ks array into all k point mode
+     Generic  , Public :: Assignment( = )         => set_real_scalar                   !! Set each element to a real constant scalar
      Generic  , Public :: Operator( .Dagger. )    => dagger                            !! Dagger each element in the array
      Generic  , Public :: Operator( * )           => multiply                          !! Multiply each element of the array with the corresponding element in another array
      Generic  , Public :: Operator( * )           => rscal_multiply                    !! Pre-multiply by a real scalar
@@ -82,6 +83,7 @@ Module ks_array_module
      Procedure,            Private :: get_all_ks_index
      Procedure,            Private :: get_my_ks_index
      Procedure,            Private :: get_ks
+     Procedure,            Private :: set_real_scalar      => ks_array_set_real_scalar
      Procedure,            Private :: set_by_global_r      => ks_array_set_global_real
      Procedure,            Private :: set_by_global_c      => ks_array_set_global_complex
      Procedure,            Private :: get_by_global_r      => ks_array_get_global_real
@@ -1195,6 +1197,26 @@ Contains
     
   End Function get_ks
 
+  Subroutine ks_array_set_real_scalar( A, data )
+
+    !! Set all elements of members of a ks_array to a real constant value, typicaly zero
+
+    Class( ks_array ), Intent( InOut ) :: A
+    Real ( wp )      , Intent( In    ) :: data
+
+    Integer :: my_ks, my_irrep
+
+    Do my_ks = 1, Size( A%my_k_points )
+       ! Irreps will need more thought - work currenly as burnt into as 1
+       Do my_irrep = 1, Size( A%my_k_points( my_ks )%data )
+          Associate( Aks => A%my_k_points( my_ks )%data( my_irrep )%matrix )
+            Aks = data
+          End Associate
+       End Do
+    End Do
+    
+  End Subroutine ks_array_set_real_scalar
+  
   Subroutine ks_array_set_global_real( A, k, s, m, n, p, q, data )
 
     !! For the matrix with spin label s and k-point label k set the (m:n,p:q) patch 

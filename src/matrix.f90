@@ -28,6 +28,7 @@ Module distributed_matrix_module
      Procedure, Public :: local_to_global        => matrix_local_to_global     !! Get an array for mapping local  indices to global ones
      Procedure, Public :: size                   => matrix_size                !! Get the dimensions of the matrix
      Procedure, Public :: get_comm               => matrix_communicator        !! Get the communicator containing the processes holding the matrix
+     Generic  , Public :: Assignment( = )        => set_real_scalar            !! Set all elements in a matrix to a constant real value
      Generic  , Public :: Operator( * )          => multiply                   !! Multiply two matrices together
      Generic  , Public :: Operator( * )          => rscal_multiply             !! Pre -scale by a real scalar
      Generic  , Public :: Operator( * )          => multiply_rscal             !! Post-scale by a real scalar
@@ -56,6 +57,7 @@ Module distributed_matrix_module
      Procedure(  set_global_complex ), Deferred,            Private :: set_global_complex      !! Set values with a complex array using global indexing
      Procedure(  get_global_real    ), Deferred,            Private :: get_global_real         !! Get values from a real    array using global indexing
      Procedure(  get_global_complex ), Deferred,            Private :: get_global_complex      !! Get values from a complex array using global indexing
+     Procedure(         real_assign ), Deferred,            Private :: set_real_scalar
      Procedure(           binary_op ), Deferred,            Private :: multiply
      Procedure(      real_binary_op ), Deferred, Pass( B ), Private :: real_multiply
      Procedure(   complex_binary_op ), Deferred, Pass( B ), Private :: complex_multiply
@@ -96,6 +98,7 @@ Module distributed_matrix_module
      Procedure,            Private :: set_global_complex => real_matrix_set_global_complex
      Procedure,            Private :: get_global_real    => real_matrix_get_global_real
      Procedure,            Private :: get_global_complex => real_matrix_get_global_complex
+     Procedure,            Private :: set_real_scalar    => real_matrix_set_real_scalar
      Procedure,            Private :: multiply           => real_multiply
      Procedure, Pass( B ), Private :: real_multiply      => real_multiply_real
      Procedure, Pass( B ), Private :: complex_multiply   => complex_multiply_real
@@ -136,6 +139,7 @@ Module distributed_matrix_module
      Procedure,            Private :: set_global_complex => complex_matrix_set_global_complex
      Procedure,            Private :: get_global_real    => complex_matrix_get_global_real
      Procedure,            Private :: get_global_complex => complex_matrix_get_global_complex
+     Procedure,            Private :: set_real_scalar    => complex_matrix_set_real_scalar
      Procedure,            Private :: multiply           => complex_multiply
      Procedure, Pass( B ), Private :: real_multiply      => real_multiply_complex
      Procedure, Pass( B ), Private :: complex_multiply   => complex_multiply_complex
@@ -243,6 +247,15 @@ Module distributed_matrix_module
        Integer                           , Intent( In    ) :: q
        Complex( wp ), Dimension( m:, p: ), Intent(   Out ) :: data
      End Subroutine get_global_complex
+
+     Subroutine real_assign( A, data )
+       !! Set a matrix to a scalar real value
+       Import :: wp
+       Import :: distributed_matrix
+       Implicit None
+       Class( distributed_matrix ), Intent( InOut ) :: A
+       Real ( wp )                , Intent( In    ) :: data
+     End Subroutine real_assign
 
      Function pre_rscal_op( s, A ) Result( B )
        !! Pre-scale a matrix with a scalar
@@ -520,7 +533,7 @@ Contains
 
   Function matrix_size( A, dim ) Result( n )
 
-    !! Get the dimensions of the matrix
+    !! Get the dimension DIM of the matrix
 
     Integer :: n
 
@@ -770,6 +783,28 @@ Contains
        
   End Function matrix_local_size_complex
 
+  Subroutine real_matrix_set_real_scalar( A, data )
+
+    !! Sets all elements in the real matrix to the same real value
+
+    Class( real_distributed_matrix ), Intent( InOut ) :: A
+    Real( wp )                      , Intent( In    ) :: data
+    
+    A%data = data
+
+  End Subroutine real_matrix_set_real_scalar
+
+  Subroutine complex_matrix_set_real_scalar( A, data )
+
+    !! Sets all elements in the real matrix to the same real value
+
+    Class( complex_distributed_matrix ), Intent( InOut ) :: A
+    Real( wp )                         , Intent( In    ) :: data
+    
+    A%data = data
+
+  End Subroutine complex_matrix_set_real_scalar
+
   Subroutine real_matrix_set_global_real( A, m, n, p, q, data )
 
     !! Sets the data ( m:n, p:q ) in the global matrix
@@ -887,7 +922,7 @@ Contains
   Subroutine real_matrix_get_global_real( A, m, n, p, q, data )
 
     Use mpi, Only : MPI_Type_create_f90_real, MPI_Sizeof, MPI_Type_match_size, MPI_Allreduce, MPI_In_place, MPI_Sum, &
-         MPI_Double_precision, MPI_Typeclass_real
+         MPI_Typeclass_real
     
     !! Gets the data ( m:n, p:q ) in the global A
 
@@ -978,7 +1013,7 @@ Contains
   Subroutine complex_matrix_get_global_complex( A, m, n, p, q, data )
 
     Use mpi, Only : MPI_Type_create_f90_complex, MPI_Sizeof, MPI_Type_match_size, MPI_Allreduce, MPI_In_place, MPI_Sum, &
-         MPI_Double_complex, MPI_Typeclass_complex
+         MPI_Typeclass_complex
 
     !! Gets the data ( m:n, p:q ) in the global matrix
 
